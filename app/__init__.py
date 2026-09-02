@@ -1,0 +1,1 @@
+"""Brainwave Bot application package."""

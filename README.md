@@ -19,8 +19,8 @@ streamlit run streamlit_app.py
 
 ## Example questions
 
-- `How many NEMIA stories were submitted in FY26?`
-- `What is NEMIA revenue in FY26?`
+- `How many EMIA stories were submitted in FY26?`
+- `What is EMIA revenue in FY26?`
 - `Show submissions by market this year`
 
 ## Next phase

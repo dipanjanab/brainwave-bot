@@ -1,14 +1,18 @@
 import streamlit as st
 from app.agents.workflow import ask_agent
+from app.main import MARKETS
 
 
 st.set_page_config(page_title="Brainwave Bot", page_icon="🧠", layout="centered")
 st.title("🧠 Brainwave Bot")
 st.caption("Ask governed questions about submitted business stories.")
 
-question = st.text_input("Question", placeholder="How many NEMIA stories were submitted in FY26?")
+market_option = st.selectbox("Market", ("All markets", *MARKETS))
+selected_market = None if market_option == "All markets" else market_option
+
+question = st.text_input("Question", placeholder="How many stories were submitted in FY26?")
 if st.button("Ask Brainwave", type="primary", disabled=not question):
-    result = ask_agent(question)
+    result = ask_agent(question, market=selected_market)
     st.success(result["answer"])
     st.caption(f"Execution mode: {result['mode']}")
     if result["period"]:
@@ -19,4 +23,4 @@ if st.button("Ask Brainwave", type="primary", disabled=not question):
         st.write({"parameters": result["parameters"]})
 
 st.divider()
-st.caption("Try: “How many stories were submitted in FY26?”, “NEMIA revenue in FY26”, or “submissions by market this year”.")
+st.caption("Try: “How many stories were submitted in FY26?”, “EMIA revenue in FY26”, or “submissions by market this year”.")

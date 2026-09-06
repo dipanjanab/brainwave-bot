@@ -4,7 +4,7 @@ from app.services.date_resolver import resolve_period
 from app.tools.sql_tool import run_read_only_sql
 
 
-MARKETS = ("NEMIA", "APAC", "AMER", "LATAM")
+MARKETS = ("EMIA", "APAC", "AMER", "LATAM")
 
 
 def _market(question: str) -> str | None:
@@ -12,10 +12,15 @@ def _market(question: str) -> str | None:
     return next((market for market in MARKETS if market in upper), None)
 
 
-def ask(question: str, today=None) -> dict:
+def ask(question: str, today=None, market: str | None = None) -> dict:
     """Deterministic V1 question handler; replace its planner with an LLM agent later."""
     seed_database()
-    market = _market(question)
+    if market is not None:
+        market = market.upper()
+        if market not in MARKETS:
+            raise ValueError(f"Unsupported market: {market}")
+    else:
+        market = _market(question)
     period = resolve_period(question, today=today)
     lower = question.lower()
     conditions, params = ["status = 'Submitted'"], []

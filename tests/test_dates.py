@@ -13,7 +13,7 @@ class DateResolverTests(unittest.TestCase):
         self.assertEqual(get_current_fiscal_year(date(2026, 9, 2)), "FY27")
 
     def test_ytd(self):
-        result = resolve_period("NEMIA YTD", today=date(2026, 9, 2))
+        result = resolve_period("EMIA YTD", today=date(2026, 9, 2))
         self.assertEqual(result["label"], "FY27 YTD")
         self.assertEqual(result["start_date"], date(2026, 4, 1))
 

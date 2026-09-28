@@ -13,9 +13,12 @@ SYSTEM_PROMPT = """You are the Brainwave data-Q&A planner. Return a concise answ
 Use the supplied business context for definitions. Fiscal dates and SQL execution are handled
 by application code. Never claim data that was not returned by the SQL tool."""
 
+DEFAULT_LLM_TIMEOUT_SECONDS = 10.0
+
 
 class BrainwaveState(TypedDict, total=False):
     question: str
+    market: str | None
     context: str
     period_label: str | None
     result: dict
@@ -34,7 +37,43 @@ def resolve_dates(state: BrainwaveState) -> BrainwaveState:
 
 def query_data(state: BrainwaveState) -> BrainwaveState:
     # The existing handler is the only route to SQL: it parameterizes values and validates SQL.
-    return {"result": ask(state["question"]), "mode": "deterministic"}
+    return {
+        "result": ask(state["question"], market=state.get("market")),
+        "mode": "deterministic",
+    }
+
+
+def _llm_timeout_seconds() -> float:
+    """Return a safe timeout even when the environment value is invalid."""
+    try:
+        timeout = float(os.getenv("BRAINWAVE_LLM_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS))
+        return timeout if timeout > 0 else DEFAULT_LLM_TIMEOUT_SECONDS
+    except (TypeError, ValueError):
+        return DEFAULT_LLM_TIMEOUT_SECONDS
+
+
+def _invoke_llm(state: BrainwaveState) -> str:
+    from langchain_openai import ChatOpenAI
+
+    model = ChatOpenAI(
+        model=os.getenv("BRAINWAVE_MODEL", "gpt-5.6-luna"),
+        temperature=0,
+        timeout=_llm_timeout_seconds(),
+        max_retries=0,
+    )
+    prompt = f"{SYSTEM_PROMPT}\n\nBusiness context:\n{state['context'] or 'None'}\n\nQuestion: {state['question']}\nVerified result: {state['result']['answer']}"
+    response = model.invoke(prompt)
+    return response.content
+
+
+def _is_timeout(error: Exception) -> bool:
+    """Recognize built-in and provider-specific timeout exceptions."""
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, TimeoutError) or "timeout" in type(current).__name__.lower():
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def formulate_answer(state: BrainwaveState) -> BrainwaveState:
@@ -42,15 +81,11 @@ def formulate_answer(state: BrainwaveState) -> BrainwaveState:
     if not os.getenv("OPENAI_API_KEY"):
         return {"answer": result["answer"], "mode": "deterministic (no API key configured)"}
     try:
-        from langchain_openai import ChatOpenAI
-
-        model = ChatOpenAI(model=os.getenv("BRAINWAVE_MODEL", "gpt-5.6-luna"), temperature=0)
-        prompt = f"{SYSTEM_PROMPT}\n\nBusiness context:\n{state['context'] or 'None'}\n\nQuestion: {state['question']}\nVerified result: {result['answer']}"
-        response = model.invoke(prompt)
-        return {"answer": response.content, "mode": "LangGraph + OpenAI"}
-    except Exception:
-        # A model outage must never prevent the verified SQL answer from being returned.
-        return {"answer": result["answer"], "mode": "deterministic fallback"}
+        return {"answer": _invoke_llm(state), "mode": "LangGraph + OpenAI"}
+    except Exception as error:
+        # Model failures must never prevent the verified SQL answer from being returned.
+        reason = "LLM timeout" if _is_timeout(error) else "LLM error"
+        return {"answer": result["answer"], "mode": f"deterministic fallback ({reason})"}
 
 
 def build_workflow():
@@ -70,9 +105,9 @@ def build_workflow():
 _workflow = build_workflow()
 
 
-def ask_agent(question: str) -> dict:
+def ask_agent(question: str, market: str | None = None) -> dict:
     """Public agent entry point for API/UI callers."""
-    state = _workflow.invoke({"question": question})
+    state = _workflow.invoke({"question": question, "market": market})
     return {
         "answer": state["answer"],
         "sql": state["result"]["sql"],
